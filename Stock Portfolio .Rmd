@@ -1,0 +1,86 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(quantmod)
+library(PerformanceAnalytics)
+library(reshape2)
+library(ggplot2)
+```
+
+
+## Assessing the value at risk for an individual stock
+```{r cars}
+StartDate = "2000-01-01"
+AAPLprices = Ad(getSymbols("AAPL", auto.assign = F, from=StartDate))
+tail(AAPLprices)
+AAPLreturns = dailyReturn(AAPLprices)
+VaR(AAPLreturns, p=0.95, method="historical")
+VaR(AAPLreturns, p=0.99, method="historical")
+CVaR(AAPLreturns, p=0.99, method="historical")
+?VaR
+```
+
+The output for value at risk is telling me that the most I can expect to lose (with 95% confidence) on any given day is 3.77% of the money I invested in Apple. With 99% confidence, the most I can expect to lose is 6.46% of my investment. 
+The output for conditional value at risk, which applies a weighted average of the “extreme” losses, tells me that the most I can expect to lose (with 99% confidence) is 9.51% on any given day.
+
+
+## Assessing the value at risk for a portfolio
+```{r pressure, echo=FALSE}
+investments = c("UBER","AAPL", "BA", "FB")
+proportions = c( 0.165, 0.207, 0.358, 0.270)
+getSymbols(investments, from=StartDate)
+
+PortfolioData = na.omit(merge(Ad(UBER), Ad(AAPL), Ad(BA), Ad(FB)))
+PortfolioReturns = ROC(PortfolioData, type = "discrete")[-1]
+head(PortfolioReturns)
+colnames(PortfolioReturns) = investments
+
+VaR(PortfolioReturns, p=0.99, weights = proportions, portfolio_method = "component", method="gaussian")
+
+```
+
+Given the weights of each investment, the risk of the entire portfolio is 13.1% with 99% confidence. The contribution to the risk of the portfolio for UBER, AAPL, BA, and FB are 1.86, 1.87, 6.95, and 2.39 respectively. Taking these contributions into consideration, UBER contributes 14.2% of the risk, AAPL contribues 14.3% of the risk, BA contribues 53.2% of the risk, and FB contributes 18.3% of the risk. In this portfolio, BA contributes a substantial amount of risk considering its weight. 
+
+
+## Historical Value at Risk
+```{r}
+HistoricalVaR = VaR(PortfolioReturns, p=0.95, weights = NULL, portfolio_method = "single", method="historical")
+HistoricalVaR
+GaussianVaR = VaR(PortfolioReturns, p=0.95, weights = NULL, portfolio_method = "single", method="gaussian")
+GaussianVaR
+ModifiedVaR = VaR(PortfolioReturns, p=0.95, weights = NULL, portfolio_method = "single", method="modified")
+ModifiedVaR
+AllVaRValues = data.frame(rbind(HistoricalVaR, GaussianVaR, ModifiedVaR))
+rownames(AllVaRValues) = c("Historical", "Gaussian", "Modified") #renaming row names because they would all be the same in the data frame
+head(AllVaRValues)
+```
+
+The historical value at risk for UBER, AAPL, BA, and FB is 5.79%, 3.35%, 5.73%, and 3.77% respectively. The gaussian values are a little higher than the historical values. The gaussian value at risk for UBER, AAPL, BA, and FB is 6.65%, 3.83%, 7.37%, and 3.95% respectively. The modified value at risk for UBER, AAPL, BA, and FB is 2.72%, 3.65%, 6.22%, and 3.90% respectively.
+
+
+
+
+```{r}
+PortfolioHistoricalVaR = VaR(PortfolioReturns, p=0.95, weights = proportions, portfolio_method = "component", method="historical")$hVaR
+PortfolioGaussianVaR = VaR(PortfolioReturns, p=0.95, weights = proportions, portfolio_method = "component", method="gaussian")$VaR[1]
+PortfolioModifiedVaR = VaR(PortfolioReturns, p=0.95, weights = proportions, portfolio_method = "component", method="modified")$MVaR[1]
+
+AllVaRValues$Portfolio = 0
+AllVaRValues$Portfolio = c(PortfolioHistoricalVaR, PortfolioGaussianVaR, PortfolioModifiedVaR)
+
+AllVaRValues = abs(AllVaRValues) #get rid of positive/negative inconsistencies since everything is a loss
+AllVaRValues$Type = c("Historical","Gaussian", "Modified")
+```
+
+
+
+## Plotting Value at Risk
+```{r}
+plotVaR = melt(AllVaRValues, variable.name = "Ticker", value.name = "VaR")
+ggplot(plotVaR, aes(x=Type, y=VaR, fill=Ticker)) + geom_bar(stat = "identity", position = "dodge")
+```
+
+Across the plot, it is clear the BA (Boeing) has the highest or near highest VaR. This might be due to the COVID's impact on the airline industry in the past year. UBER also has a high Gaussian and Historical VaR. Ironically, UBER has the lowest modified VaR. AAPL and FB have the lower VaRs across the plot. As is commonly seen among portfolios, the portfolio VaR is on the lower end of risk for historical and gaussian VaR but is on the higher end for modified VaR. Overall, gaussian is producing the higher VaR estimates when compared to historical or modified VaR.
